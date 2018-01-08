@@ -1,0 +1,60 @@
+{
+	"AWSTemplateFormatVersion": "2010-09-09",
+	"Metadata": {
+		"AWS::CloudFormation::Interface": {
+			"ParameterGroups": [ {
+				"Label": { "default": "Naming" },
+				"Parameters": [ "EnvNamePretty", "EnvNameDNS" ]
+			}, {
+				"Label": { "default": "Sizing" },
+				"Parameters": [ "DynamoWCU", "DynamoRCU" ]
+			} ],
+			"ParameterLabels": {
+				"EnvNamePretty": { "default": "Pretty Environment Name" },
+				"EnvNameDNS": { "default": "DNS-Compliant Environment Name" },
+				"DynamoRCU": { "default": "DynamoDB Read Units" },
+				"DynamoWCU": { "default": "DynamoDB Write Units" }
+			}
+		}
+	},
+	"Parameters": {
+		"EnvNamePretty": {
+			"Type": "String",
+			"Default": "Dev",
+			"Description": "Pretty environment designation"
+		},
+		"EnvNameDNS": {
+			"Type": "String",
+			"Default": "dev",
+			"Description": "DNS-Compliant environment designation"
+		},
+		"DynamoWCU": {
+			"Type": "Number",
+			"Default": "5",
+			"Description": "Write Capacity Units (1K Writes Per Second)"
+		},
+		"DynamoRCU": {
+			"Type": "Number",
+			"Default": "5",
+			"Description": "Read Capacity Units (4K Consisent Reads Per Second [x2 for non-consistent])"
+		}
+	},
+	"Resources": {
+		"RatingsDB":{
+			"Type": "AWS::DynamoDB::Table",
+			"Properties": {
+				"AttributeDefinitions": [
+					{ "AttributeName": "id", "AttributeType": "S" }
+				],
+				"ProvisionedThroughput": {
+					"ReadCapacityUnits": { "Ref": "DynamoRCU" },
+					"WriteCapacityUnits": { "Ref": "DynamoWCU" }
+				},
+				"TableName": { "Fn::Join": [ "", [ "GraphTV-Ratings-", { "Ref": "EnvNamePretty" } ] ] },
+				"KeySchema": [
+					{ "AttributeName": "id", "KeyType": "HASH" }
+				]
+			}
+		}
+	}
+}
