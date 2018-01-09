@@ -4,7 +4,7 @@
 		"AWS::CloudFormation::Interface": {
 			"ParameterGroups": [ {
 				"Label": { "default": "Naming" },
-				"Parameters": [ "EnvNamePretty", "EnvNameDNS" ]
+				"Parameters": [ "EnvNamePretty", "EnvNameDNS", "StaticSiteAdd" ]
 			}, {
 				"Label": { "default": "Sizing" },
 				"Parameters": [ "DynamoWCU", "DynamoRCU" ]
@@ -13,7 +13,8 @@
 				"EnvNamePretty": { "default": "Pretty Environment Name" },
 				"EnvNameDNS": { "default": "DNS-Compliant Environment Name" },
 				"DynamoRCU": { "default": "DynamoDB Read Units" },
-				"DynamoWCU": { "default": "DynamoDB Write Units" }
+				"DynamoWCU": { "default": "DynamoDB Write Units" },
+				"StaticSiteAdd": { "default": "Static Website Address" }
 			}
 		}
 	},
@@ -37,6 +38,11 @@
 			"Type": "Number",
 			"Default": "5",
 			"Description": "Read Capacity Units (4K Consisent Reads Per Second [x2 for non-consistent])"
+		},
+		"StaticSiteAdd": {
+			"Type": "String",
+			"Default": "",
+			"Description": "Hostname for static S3 website name."
 		}
 	},
 	"Resources": {
@@ -54,6 +60,89 @@
 				"KeySchema": [
 					{ "AttributeName": "id", "KeyType": "HASH" }
 				]
+			}
+		},
+		"StaticWebsiteBucket": {
+			"Type": "AWS::S3::Bucket",
+			"Properties": {
+				"BucketName": { "Ref": "StaticSiteAdd" },
+				"AccessControl": "PublicRead",
+				"WebsiteConfiguration": {
+					"IndexDocument": "index.html",
+					"ErrorDocument": "error.html"
+				}
+			},
+			"DeletionPolicy": "Retain"
+		},
+		"StaticWebsiteBucketPolicy": {
+			"Type": "AWS::S3::BucketPolicy",
+			"Properties": {
+				"Bucket": { "Ref": "StaticWebsiteBucket" },
+				"PolicyDocument": {
+					"Id": "WebAccess",
+					"Version": "2012-10-17",
+					"Statement": [ {
+						"Sid": "PublicReadForGetBucketObjects",
+						"Effect": "Allow",
+						"Principal": "*",
+						"Action": "s3:GetObject",
+						"Resource": { "Fn::Join": [ "", [ "arn:aws:s3:::", { "Ref": "StaticWebsiteBucket" }, "/*" ] ] }
+					} ]
+				}
+			}
+		},
+		"RestAPI": {
+			"Type": "AWS::ApiGateway::RestApi",
+			"Properties": {
+				"Name": { "Fn::Join": [ "", [ "GraphTV-", { "Ref": "EnvNamePretty" } ] ] }
+			}
+		},
+		"APIShows": {
+			"Type": "AWS::ApiGateway::Resource",
+			"Properties": {
+				"RestApiId": { "Ref": "RestAPI" },
+				"ParentId": { "Fn::GetAtt": ["RestAPI", "RootResourceId"] },
+				"PathPart": "shows"
+			}
+		},
+		"APIShowsShowId": {
+			"Type": "AWS::ApiGateway::Resource",
+			"Properties": {
+				"RestApiId": { "Ref": "RestAPI" },
+				"ParentId": { "Ref": "APIShows" },
+				"PathPart": "{showId}"
+			}
+		},
+		"APIShowsShowIdRatings": {
+			"Type": "AWS::ApiGateway::Resource",
+			"Properties": {
+				"RestApiId": { "Ref": "RestAPI" },
+				"ParentId": { "Ref": "APIShowsShowId" },
+				"PathPart": "ratings"
+			}
+		},
+		"APIShowsRatings": {
+			"Type": "AWS::ApiGateway::Method",
+			"Properties": {
+				"RestApiId": { "Ref": "RestAPI" },
+				"ResourceId": { "Ref": "APIShowsShowIdRatings" },
+				"AuthorizationType": "NONE",
+				"HttpMethod": "GET",
+				"Integration": {
+					"Type": "AWS_PROXY",
+					"IntegrationHttpMethod": "POST",
+					"Uri": { "Fn::Join": [ "", [
+						"arn:aws:apigateway:",
+						{ "Ref": "AWS::Region"},
+						":lambda:path/2015-03-31/functions/arn:aws:lambda:",
+						{ "Ref": "AWS::Region"},
+						":",
+						{ "Ref": "AWS::AccountId" },
+						":function:GraphTV-Serverless-",
+						{ "Ref": "EnvNamePretty" },
+						"-ShowsRatings/invocations"
+					] ] }
+				}
 			}
 		}
 	}
