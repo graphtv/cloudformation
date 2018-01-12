@@ -8,6 +8,8 @@ You are responsible for understanding what the template provisions and how much 
 
 That all being said, the goal of this project was to make a scalable web app with an eye toward minimal and scaling costs. A site with no viewers should basically be free.
 
+Note: During the CloudFormation deployment process you will hang on the CloudFront and Certificate creation. Check the administrator@domain.com or admin@domain.com emails to approve the certificate. CloudFront will still take a while to deploy (~1hr sometimes).
+
 ## Build Status
 
 Coming soon!

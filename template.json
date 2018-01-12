@@ -88,6 +88,20 @@
 				} ]
 			}
 		},
+		"APICertificate": {
+			"Type": "AWS::CertificateManager::Certificate",
+			"Properties": {
+				"DomainName": { "Fn::Join": [ "", [ "api.", { "Ref": "DomainName" } ] ] },
+				"DomainValidationOptions": [ {
+					"DomainName": { "Fn::Join": [ "", [ "api.", { "Ref": "DomainName" } ] ] },
+					"ValidationDomain": { "Ref": "ValidationEmailDomain" }
+				} ],
+				"Tags": [ {
+					"Key": "Name",
+					"Value": { "Fn::Join": [ "", [ "GraphTV - ", { "Ref": "EnvNamePretty" }, " API" ] ] }
+				} ]
+			}
+		},
 		"CloudFront": {
 			"Type": "AWS::CloudFront::Distribution",
 			"Properties": {
@@ -171,6 +185,16 @@
 			"Type": "AWS::ApiGateway::RestApi",
 			"Properties": {
 				"Name": { "Fn::Join": [ "", [ "GraphTV-", { "Ref": "EnvNamePretty" } ] ] }
+			}
+		},
+		"RestAPICustomDomain": {
+			"Type": "AWS::ApiGateway::DomainName",
+			"Properties": {
+				"CertificateArn": { "Ref": "APICertificate" },
+				"DomainName": { "Fn::Join": [ "", [ "api.", { "Ref": "DomainName" } ] ] },
+				"EndpointConfiguration": {
+					"Types": [ "EDGE" ]
+				}
 			}
 		},
 		"APIShows": {
