@@ -1,5 +1,13 @@
 # GraphTV - CloudFormation
 
+## Warning
+
+Running this CloudFormation Template _WILL_ incur costs. Most (depending on traffic) reside in the AWS Free Tier.
+
+You are responsible for understanding what the template provisions and how much it will cost you.
+
+That all being said, the goal of this project was to make a scalable web app with an eye toward minimal and scaling costs. A site with no viewers should basically be free.
+
 ## Build Status
 
 Coming soon!

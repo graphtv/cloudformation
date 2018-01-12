@@ -4,21 +4,32 @@
 		"AWS::CloudFormation::Interface": {
 			"ParameterGroups": [ {
 				"Label": { "default": "Naming" },
-				"Parameters": [ "EnvNamePretty", "EnvNameDNS", "StaticSiteAdd" ]
+				"Parameters": [ "DomainName", "ValidationEmailDomain", "EnvNamePretty", "EnvNameDNS" ]
 			}, {
 				"Label": { "default": "Sizing" },
 				"Parameters": [ "DynamoWCU", "DynamoRCU" ]
 			} ],
 			"ParameterLabels": {
+				"DomainName": { "default": "Domain Name" },
+				"ValidationEmailDomain": { "default": "Validation Email Domain" },
 				"EnvNamePretty": { "default": "Pretty Environment Name" },
 				"EnvNameDNS": { "default": "DNS-Compliant Environment Name" },
 				"DynamoRCU": { "default": "DynamoDB Read Units" },
-				"DynamoWCU": { "default": "DynamoDB Write Units" },
-				"StaticSiteAdd": { "default": "Static Website Address" }
+				"DynamoWCU": { "default": "DynamoDB Write Units" }
 			}
 		}
 	},
 	"Parameters": {
+		"DomainName": {
+			"Type": "String",
+			"Default": "",
+			"Description": "Domain Name for Route53 Hosted Zone and Static S3 Site"
+		},
+		"ValidationEmailDomain": {
+			"Type": "String",
+			"Default": "",
+			"Description": "The email domain for ACM to use to send you validation emails. Can be the same as Domain Name or a higher level domain."
+		},
 		"EnvNamePretty": {
 			"Type": "String",
 			"Default": "Dev",
@@ -38,15 +49,80 @@
 			"Type": "Number",
 			"Default": "5",
 			"Description": "Read Capacity Units (4K Consisent Reads Per Second [x2 for non-consistent])"
-		},
-		"StaticSiteAdd": {
-			"Type": "String",
-			"Default": "",
-			"Description": "Hostname for static S3 website name."
 		}
 	},
 	"Resources": {
-		"RatingsDB":{
+		"HostedZone": {
+			"Type": "AWS::Route53::HostedZone",
+			"Properties": {
+				"HostedZoneConfig": {
+					"Comment": { "Fn::Join": [ "", [ "GraphTV - ", { "Ref": "EnvNamePretty" } ] ] }
+				},
+				"Name": { "Ref": "DomainName" }
+			}
+		},
+		"CloudFrontAlias": {
+			"Type": "AWS::Route53::RecordSet",
+			"Properties": {
+				"AliasTarget": {
+					"DNSName": { "Fn::GetAtt": [ "CloudFront", "DomainName" ] },
+					"HostedZoneId": "Z2FDTNDATAQYW2"	
+				},
+				"Comment": "To CloudFront S3",
+				"HostedZoneId": { "Ref": "HostedZone" },
+				"Name": { "Fn::Join": [ "", [ { "Ref": "DomainName" }, "." ] ] },
+				"Type": "A"
+			}
+		},
+		"Certificate": {
+			"Type": "AWS::CertificateManager::Certificate",
+			"Properties": {
+				"DomainName": { "Ref": "DomainName" },
+				"DomainValidationOptions": [ {
+					"DomainName": { "Ref": "DomainName" },
+					"ValidationDomain": { "Ref": "ValidationEmailDomain" }
+				} ],
+				"Tags": [ {
+					"Key": "Name",
+					"Value": { "Fn::Join": [ "", [ "GraphTV - ", { "Ref": "EnvNamePretty" } ] ] }
+				} ]
+			}
+		},
+		"CloudFront": {
+			"Type": "AWS::CloudFront::Distribution",
+			"Properties": {
+				"DistributionConfig": {
+					"Aliases": [
+						{ "Ref": "DomainName" }
+					],
+					"Comment": { "Fn::Join": [ "", [ "GraphTV - ", { "Ref": "EnvNamePretty" } ] ] },
+					"DefaultCacheBehavior": {
+						"ForwardedValues": {
+							"QueryString": false
+						},
+						"TargetOriginId": { "Fn::Join": [ "", [ "S3-", { "Ref": "DomainName" } ] ] },
+						"ViewerProtocolPolicy": "redirect-to-https"
+					},
+					"DefaultRootObject": "index.html",
+					"Enabled": true,
+					"HttpVersion": "http2",
+					"Origins": [ {
+						"DomainName": { "Fn::Join": [ "", [ { "Ref": "DomainName" }, ".s3.amazonaws.com" ] ] },
+						"Id": { "Fn::Join": [ "", [ "S3-", { "Ref": "DomainName" } ] ] },
+						"S3OriginConfig": {
+							"OriginAccessIdentity": ""
+						}
+					} ],
+					"PriceClass": "PriceClass_100",
+					"ViewerCertificate": {
+						"AcmCertificateArn": { "Ref": "Certificate" },
+						"MinimumProtocolVersion": "TLSv1.1_2016",
+						"SslSupportMethod": "sni-only"
+					}
+				}
+			}
+		},
+		"RatingsDB": {
 			"Type": "AWS::DynamoDB::Table",
 			"Properties": {
 				"AttributeDefinitions": [
@@ -65,7 +141,7 @@
 		"StaticWebsiteBucket": {
 			"Type": "AWS::S3::Bucket",
 			"Properties": {
-				"BucketName": { "Ref": "StaticSiteAdd" },
+				"BucketName": { "Ref": "DomainName" },
 				"AccessControl": "PublicRead",
 				"WebsiteConfiguration": {
 					"IndexDocument": "index.html",
@@ -113,6 +189,14 @@
 				"PathPart": "{showId}"
 			}
 		},
+		"APIShowsSearch": {
+			"Type": "AWS::ApiGateway::Resource",
+			"Properties": {
+				"RestApiId": { "Ref": "RestAPI" },
+				"ParentId": { "Ref": "APIShows" },
+				"PathPart": "search"
+			}
+		},
 		"APIShowsShowIdRatings": {
 			"Type": "AWS::ApiGateway::Resource",
 			"Properties": {
@@ -144,6 +228,16 @@
 					] ] }
 				}
 			}
+		}
+	},
+	"Outputs": {
+		"HostedZone": {
+			"Description": "Route53 hosted zone name and website hostname.",
+			"Value": { "Ref": "DomainName" }
+		},
+		"NameServers": {
+			"Description": "Route53 name servers for the hosted zone.",
+			"Value": { "Fn::Join": [ " ", { "Fn::GetAtt": [ "HostedZone", "NameServers" ] } ] }
 		}
 	}
 }
