@@ -6,12 +6,16 @@
 				"Label": { "default": "Naming" },
 				"Parameters": [ "DomainName", "ValidationEmailDomain", "EnvNamePretty", "EnvNameDNS" ]
 			}, {
+				"Label": { "default": "Security" },
+				"Parameters": [ "CORSMode" ]
+			}, {
 				"Label": { "default": "Sizing" },
 				"Parameters": [ "DynamoWCU", "DynamoRCU" ]
 			} ],
 			"ParameterLabels": {
 				"DomainName": { "default": "Domain Name" },
 				"ValidationEmailDomain": { "default": "Validation Email Domain" },
+				"CORSMode": { "default": "CORS Mode" },
 				"EnvNamePretty": { "default": "Pretty Environment Name" },
 				"EnvNameDNS": { "default": "DNS-Compliant Environment Name" },
 				"DynamoRCU": { "default": "DynamoDB Read Units" },
@@ -29,6 +33,15 @@
 			"Type": "String",
 			"Default": "",
 			"Description": "The email domain for ACM to use to send you validation emails. Can be the same as Domain Name or a higher level domain."
+		},
+		"CORSMode": {
+			"Type": "String",
+			"AllowedValues": [
+				"Restrictive",
+				"Permissive"
+			],
+			"Default": "Permissive",
+			"Description": "Cross-Origin Resource Sharing Mode. Restrictive allows API calls only from api.[Domain Name] addresses. Permissive allows API calls from any address."
 		},
 		"EnvNamePretty": {
 			"Type": "String",
@@ -50,6 +63,9 @@
 			"Default": "5",
 			"Description": "Read Capacity Units (4K Consisent Reads Per Second [x2 for non-consistent])"
 		}
+	},
+	"Conditions": {
+		"CORSIsRestrictive": { "Fn::Equals": [ { "Ref": "CORSMode" }, "Restrictive" ] }
 	},
 	"Resources": {
 		"HostedZone": {
@@ -194,6 +210,13 @@
 				}
 			}
 		},
+		"SearchBucket": {
+			"Type": "AWS::S3::Bucket",
+			"Properties": {
+				"BucketName": { "Fn::Join": [ "", [ "graphtv-search-", { "Ref": "EnvNameDNS" } ] ] }
+			},
+			"DeletionPolicy": "Retain"
+		},
 		"RestAPI": {
 			"Type": "AWS::ApiGateway::RestApi",
 			"Properties": {
@@ -203,11 +226,14 @@
 		"APILiveDeployment": {
 			"Type": "AWS::ApiGateway::Deployment",
 			"DependsOn": [
-				"APIShows",
-				"APIShowsShowId",
-				"APIShowsSearch",
-				"APIShowsShowIdRatings",
-				"APIShowsRatings"
+                "APIShow",
+                "APIShowShowId",
+                "APIShowShowIdRatings",
+                "APIShowShowIdRatingsGET",
+                "APIShowShowIdRatingsOPTIONS",
+                "APISearch",
+                "APISearchQuery",
+                "APISearchQueryGET"
 			],
 			"Properties": {
 				"Description": { "Fn::Join": [ "", [ "GraphTV-", { "Ref": "EnvNamePretty" } ] ] },
@@ -244,43 +270,35 @@
 				"Stage": { "Ref": "APILiveStage" }
 			}
 		},
-		"APIShows": {
+		"APIShow": {
 			"Type": "AWS::ApiGateway::Resource",
 			"Properties": {
 				"RestApiId": { "Ref": "RestAPI" },
 				"ParentId": { "Fn::GetAtt": ["RestAPI", "RootResourceId"] },
-				"PathPart": "shows"
+				"PathPart": "show"
 			}
 		},
-		"APIShowsShowId": {
+		"APIShowShowId": {
 			"Type": "AWS::ApiGateway::Resource",
 			"Properties": {
 				"RestApiId": { "Ref": "RestAPI" },
-				"ParentId": { "Ref": "APIShows" },
+				"ParentId": { "Ref": "APIShow" },
 				"PathPart": "{showId}"
 			}
 		},
-		"APIShowsSearch": {
+		"APIShowShowIdRatings": {
 			"Type": "AWS::ApiGateway::Resource",
 			"Properties": {
 				"RestApiId": { "Ref": "RestAPI" },
-				"ParentId": { "Ref": "APIShows" },
-				"PathPart": "search"
-			}
-		},
-		"APIShowsShowIdRatings": {
-			"Type": "AWS::ApiGateway::Resource",
-			"Properties": {
-				"RestApiId": { "Ref": "RestAPI" },
-				"ParentId": { "Ref": "APIShowsShowId" },
+				"ParentId": { "Ref": "APIShowShowId" },
 				"PathPart": "ratings"
 			}
 		},
-		"APIShowsRatings": {
+		"APIShowShowIdRatingsGET": {
 			"Type": "AWS::ApiGateway::Method",
 			"Properties": {
 				"RestApiId": { "Ref": "RestAPI" },
-				"ResourceId": { "Ref": "APIShowsShowIdRatings" },
+				"ResourceId": { "Ref": "APIShowShowIdRatings" },
 				"AuthorizationType": "NONE",
 				"HttpMethod": "GET",
 				"Integration": {
@@ -295,9 +313,138 @@
 						{ "Ref": "AWS::AccountId" },
 						":function:GraphTV-Serverless-",
 						{ "Ref": "EnvNamePretty" },
-						"-ShowsRatings/invocations"
+						"-ShowRatings/invocations"
+					] ] }
+				},
+				"MethodResponses": [ {
+					"StatusCode": "200",
+					"ResponseModels": {},
+					"ResponseParameters": {
+						"method.response.header.Access-Control-Allow-Origin": false
+					}
+				} ]
+			}
+		},
+		"APIShowShowIdRatingsOPTIONS": {
+			"Type": "AWS::ApiGateway::Method",
+			"Properties": {
+				"RestApiId": { "Ref": "RestAPI" },
+				"ResourceId": { "Ref": "APIShowShowIdRatings" },
+				"AuthorizationType": "NONE",
+				"HttpMethod": "OPTIONS",
+				"Integration": {
+					"Type": "MOCK",
+					"RequestTemplates": {
+						"application/json": "{\"statusCode\": 200}"
+					},
+					"PassthroughBehavior": "WHEN_NO_MATCH",
+					"IntegrationResponses": [ {
+						"StatusCode": "200",
+						"ResponseParameters": {
+							"method.response.header.Access-Control-Allow-Headers": "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'",
+							"method.response.header.Access-Control-Allow-Methods": "'GET,OPTIONS'",
+							"method.response.header.Access-Control-Allow-Origin": { "Fn::If": [ "CORSIsRestrictive",
+								{ "Fn::Join": [ "", [ "'", "api.", { "Ref": "DomainName" }, "'" ] ] },
+								"'*'"
+							] }
+						},
+						"ResponseTemplates": {
+							"application/json": ""
+						}
+					} ]
+				},
+				"MethodResponses": [ {
+					"StatusCode": "200",
+					"ResponseModels": {
+						"application/json": "Empty"
+					},
+					"ResponseParameters": {
+						"method.response.header.Access-Control-Allow-Headers": false,
+						"method.response.header.Access-Control-Allow-Methods": false,
+						"method.response.header.Access-Control-Allow-Origin": false
+					}
+				} ]
+			}
+		},
+		"APISearch": {
+			"Type": "AWS::ApiGateway::Resource",
+			"Properties": {
+				"RestApiId": { "Ref": "RestAPI" },
+				"ParentId": { "Fn::GetAtt": ["RestAPI", "RootResourceId"] },
+				"PathPart": "search"
+			}
+		},
+		"APISearchQuery": {
+			"Type": "AWS::ApiGateway::Resource",
+			"Properties": {
+				"RestApiId": { "Ref": "RestAPI" },
+				"ParentId": { "Ref": "APISearch" },
+				"PathPart": "{query}"
+			}
+		},
+		"APISearchQueryGET": {
+			"Type": "AWS::ApiGateway::Method",
+			"Properties": {
+				"RestApiId": { "Ref": "RestAPI" },
+				"ResourceId": { "Ref": "APISearchQuery" },
+				"AuthorizationType": "NONE",
+				"HttpMethod": "GET",
+				"Integration": {
+					"Type": "AWS_PROXY",
+					"IntegrationHttpMethod": "POST",
+					"Uri": { "Fn::Join": [ "", [
+						"arn:aws:apigateway:",
+						{ "Ref": "AWS::Region"},
+						":lambda:path/2015-03-31/functions/arn:aws:lambda:",
+						{ "Ref": "AWS::Region"},
+						":",
+						{ "Ref": "AWS::AccountId" },
+						":function:GraphTV-Serverless-",
+						{ "Ref": "EnvNamePretty" },
+						"-Search/invocations"
 					] ] }
 				}
+			}
+		},
+		"APISearchQueryOPTIONS": {
+			"Type": "AWS::ApiGateway::Method",
+			"Properties": {
+				"RestApiId": { "Ref": "RestAPI" },
+				"ResourceId": { "Ref": "APISearchQuery" },
+				"AuthorizationType": "NONE",
+				"HttpMethod": "OPTIONS",
+				"Integration": {
+					"Type": "MOCK",
+					"RequestTemplates": {
+						"application/json": "{\"statusCode\": 200}"
+					},
+					"PassthroughBehavior": "WHEN_NO_MATCH",
+					"IntegrationResponses": [ {
+						"StatusCode": "200",
+						"ResponseParameters": {
+							"method.response.header.Access-Control-Allow-Headers": "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'",
+							"method.response.header.Access-Control-Allow-Methods": "'GET,OPTIONS'",
+							"method.response.header.Access-Control-Allow-Origin": { "Fn::If": [ "CORSIsRestrictive",
+								{ "Fn::Join": [ "", [ "'", "api.", { "Ref": "DomainName" }, "'" ] ] },
+								"'*'"
+							] }
+						},
+						"ResponseTemplates": {
+							"application/json": ""
+						}
+					} ]
+				},
+				"MethodResponses": [ {
+					"StatusCode": "200",
+					"ResponseModels": {
+						"application/json": "Empty"
+					},
+					"ResponseParameters": {
+						"method.response.header.Access-Control-Allow-Headers": false,
+						"method.response.header.Access-Control-Allow-Methods": false,
+						"method.response.header.Access-Control-Allow-Origin": false
+					}
+				} ]
 			}
 		}
 	},
