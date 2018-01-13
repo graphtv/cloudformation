@@ -74,6 +74,19 @@
 				"Type": "A"
 			}
 		},
+		"APIGatewayAlias": {
+			"Type": "AWS::Route53::RecordSet",
+			"Properties": {
+				"AliasTarget": {
+					"DNSName": { "Fn::GetAtt": [ "RestAPICustomDomain", "DistributionDomainName" ] },
+					"HostedZoneId": "Z2FDTNDATAQYW2"	
+				},
+				"Comment": "To API Gateway CloudFront",
+				"HostedZoneId": { "Ref": "HostedZone" },
+				"Name": { "Fn::Join": [ "", [ "api.", { "Ref": "DomainName" }, "." ] ] },
+				"Type": "A"
+			}
+		},
 		"Certificate": {
 			"Type": "AWS::CertificateManager::Certificate",
 			"Properties": {
@@ -187,6 +200,32 @@
 				"Name": { "Fn::Join": [ "", [ "GraphTV-", { "Ref": "EnvNamePretty" } ] ] }
 			}
 		},
+		"APILiveDeployment": {
+			"Type": "AWS::ApiGateway::Deployment",
+			"DependsOn": [
+				"APIShows",
+				"APIShowsShowId",
+				"APIShowsSearch",
+				"APIShowsShowIdRatings",
+				"APIShowsRatings"
+			],
+			"Properties": {
+				"Description": { "Fn::Join": [ "", [ "GraphTV-", { "Ref": "EnvNamePretty" } ] ] },
+				"RestApiId": { "Ref": "RestAPI" }
+			}
+		},
+		"APILiveStage": {
+			"Type": "AWS::ApiGateway::Stage",
+			"Properties": {
+				"DeploymentId": { "Ref": "APILiveDeployment" },
+				"Description": { "Fn::Join": [ "", [ "GraphTV-", { "Ref": "EnvNamePretty" } ] ] },
+				"RestApiId": { "Ref": "RestAPI" },
+				"StageName": "live",
+				"Variables": {
+					"environment": { "Ref": "EnvNamePretty" }
+				}
+			}
+		},
 		"RestAPICustomDomain": {
 			"Type": "AWS::ApiGateway::DomainName",
 			"Properties": {
@@ -195,6 +234,14 @@
 				"EndpointConfiguration": {
 					"Types": [ "EDGE" ]
 				}
+			}
+		},
+		"RestAPIMapping": {
+			"Type": "AWS::ApiGateway::BasePathMapping",
+			"Properties": {
+				"DomainName": { "Ref": "RestAPICustomDomain" },
+				"RestApiId": { "Ref": "RestAPI" },
+				"Stage": { "Ref": "APILiveStage" }
 			}
 		},
 		"APIShows": {
